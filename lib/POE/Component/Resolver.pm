@@ -9,6 +9,8 @@ use Carp qw(croak);
 use Storable qw(nfreeze thaw);
 use Socket::GetAddrInfo qw(:newapi getaddrinfo);
 use Time::HiRes qw(time);
+use Socket qw(AF_INET);
+use Socket6 qw(AF_INET6);
 
 # Plain Perl constructor.
 
@@ -16,6 +18,19 @@ sub new {
 	my ($class, $args) = @_;
 
 	my $max_resolvers = $args->{max_resolvers} || 8;
+
+	my $af_order = $args->{af_order};
+	if (defined $af_order) {
+		if (ref($af_order) eq "") {
+			$af_order = [ $af_order ];
+		}
+		elsif (ref($af_order) ne "ARRAY") {
+			croak "af_order must be a scalar or an array reference";
+		}
+
+		my @illegal_afs = grep { ($_ ne AF_INET) && ($_ ne AF_INET6) } @$af_order;
+		croak "af_order may only contain AF_INET and/or AF_INET6" if @illegal_afs;
+	}
 
 	my $self = bless { }, $class;
 
@@ -31,7 +46,7 @@ sub new {
 			sidecar_eject    => \&_poe_sidecar_eject,
 			sidecar_attach   => \&_poe_sidecar_attach,
 		},
-		args => [ "$self", $max_resolvers ],
+		args => [ "$self", $max_resolvers, $af_order ],
 	);
 
 	return $self;
@@ -110,8 +125,11 @@ sub _poe_request {
 # processes, which are owned and managed by that session.
 
 sub _poe_start {
-	my ($kernel, $heap, $alias, $max_resolvers) = @_[KERNEL, HEAP, ARG0..ARG1];
+	my ($kernel, $heap, $alias, $max_resolvers, $af_order) = @_[
+		KERNEL, HEAP, ARG0..ARG2
+	];
 
+	$heap->{af_order}        = $af_order;
 	$heap->{requests}        = {};
 	$heap->{last_reuqest_id} = 0;
 	$heap->{alias}           = $alias;
@@ -313,6 +331,14 @@ sub _poe_sidecar_response {
 
 	my $request_rec = delete $heap->{requests}{$request_id};
 	return unless defined $request_rec;
+
+	if (defined $heap->{af_order}) {
+		my @filtered_addresses;
+		foreach my $af_filter (@{$heap->{af_order}}) {
+			push @filtered_addresses, grep { $_->{family} == $af_filter } @$addresses;
+		}
+		$addresses = \@filtered_addresses;
+	}
 
 	$kernel->post(
 		$request_rec->{sender}, $request_rec->{event},

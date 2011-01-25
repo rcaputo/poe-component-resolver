@@ -11,8 +11,7 @@ use Socket6 qw(AF_INET6);
 my $r = POE::Component::Resolver->new();
 
 my @hosts = qw(
-	www.yahoo.com www.google.com www.delicious.com www.av.com
-	www.ask.com www.comcast.com www.netrus.net
+	www.nic.cz
 );
 
 POE::Session->create(
@@ -23,7 +22,6 @@ POE::Session->create(
 					host    => $host,
 					service => "http",
 					event   => "got_response",
-					# hints => { family => AF_INET6 },
 				) or die $!;
 			}
 		},
