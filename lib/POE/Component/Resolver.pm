@@ -54,7 +54,8 @@ sub _poe_shutdown {
 			$request->{sender},
 			$request->{event},
 			'component shut down',
-			[ ]
+			[ ],
+			{ map { $_ => $request->{$_} } qw(host service event misc) },
 		);
 
 		$kernel->refcount_decrement($request->{sender}, __PACKAGE__);
@@ -64,8 +65,8 @@ sub _poe_shutdown {
 }
 
 sub _poe_request {
-	my ($kernel, $heap, $host, $service, $hints, $event) = @_[
-		KERNEL, HEAP, ARG0..ARG3
+	my ($kernel, $heap, $host, $service, $hints, $event, $misc) = @_[
+		KERNEL, HEAP, ARG0..ARG4
 	];
 
 	return if $heap->{shutdown};
@@ -80,6 +81,7 @@ sub _poe_request {
 		hints   => $hints,
 		sender  => $sender_id,
 		event   => $event,
+		misc    => $misc,
 	};
 
 	$kernel->refcount_increment($sender_id, __PACKAGE__);
@@ -205,6 +207,9 @@ sub resolve {
 		defined $service and length $service
 	);
 
+	my $misc = delete $args{misc};
+	$misc //= "";
+
 	my $hints = delete $args{hints};
 	$hints //= { };
 
@@ -215,7 +220,9 @@ sub resolve {
 	croak "unknown resolve() parameter(s): @error" if @error;
 
 	croak "resolve() on shutdown resolver" unless (
-		$poe_kernel->call("$self", "request", $host, $service, $hints, $event)
+		$poe_kernel->call(
+			"$self", "request", $host, $service, $hints, $event, $misc
+		)
 	);
 }
 
@@ -255,7 +262,9 @@ sub _poe_sidecar_response {
 	return unless defined $request_rec;
 
 	$kernel->post(
-		$request_rec->{sender}, $request_rec->{event}, $error, $addresses
+		$request_rec->{sender}, $request_rec->{event},
+		$error, $addresses,
+		{ map { $_ => $request_rec->{$_} } qw(host service event misc) },
 	);
 
 	$kernel->refcount_decrement($request_rec->{sender}, __PACKAGE__);
