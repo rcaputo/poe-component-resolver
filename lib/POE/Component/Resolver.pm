@@ -10,10 +10,12 @@ use Storable qw(nfreeze thaw);
 use Socket::GetAddrInfo qw(:newapi getaddrinfo);
 use Time::HiRes qw(time);
 
+# Plain Perl constructor.
+
 sub new {
 	my ($class, $args) = @_;
 
-	my $max_sidecars = $args->{max_sidecars} || 8;
+	my $max_resolvers = $args->{max_resolvers} || 8;
 
 	my $self = bless { }, $class;
 
@@ -29,7 +31,7 @@ sub new {
 			sidecar_eject    => \&_poe_sidecar_eject,
 			sidecar_attach   => \&_poe_sidecar_attach,
 		},
-		args => [ "$self", $max_sidecars ],
+		args => [ "$self", $max_resolvers ],
 	);
 
 	return $self;
@@ -39,6 +41,10 @@ sub DESTROY {
 	my $self = shift;
 	$poe_kernel->call("$self", "shutdown");
 }
+
+# Internal POE event handler to release all resources owned by the
+# hidden POE::Session and then shut it down.  It's an event handler so
+# that this code can run "within" the POE::Session.
 
 sub _poe_shutdown {
 	my ($kernel, $heap) = @_[KERNEL, HEAP];
@@ -63,6 +69,10 @@ sub _poe_shutdown {
 
 	$heap->{requests} = {};
 }
+
+# POE event handler to accept a request from some other session.  The
+# public Perl resolve() method forwards into this.  This runs "within"
+# the session so the resources it creates are properly owned.
 
 sub _poe_request {
 	my ($kernel, $heap, $host, $service, $hints, $event, $misc) = @_[
@@ -96,13 +106,16 @@ sub _poe_request {
 	return 1;
 }
 
+# POE _start handler.  Initialize the session and start sidecar
+# processes, which are owned and managed by that session.
+
 sub _poe_start {
-	my ($kernel, $heap, $alias, $max_sidecars) = @_[KERNEL, HEAP, ARG0..ARG1];
+	my ($kernel, $heap, $alias, $max_resolvers) = @_[KERNEL, HEAP, ARG0..ARG1];
 
 	$heap->{requests}        = {};
 	$heap->{last_reuqest_id} = 0;
 	$heap->{alias}           = $alias;
-	$heap->{max_sidecars}    = $max_sidecars;
+	$heap->{max_resolvers}   = $max_resolvers;
 
 	$kernel->alias_set($alias);
 
@@ -111,14 +124,15 @@ sub _poe_start {
 	undef;
 }
 
-### Set up the subprocess if one doesn't already exist.
+# Internal helper sub.  Make sure the apprpriate number of sidecar
+# resolvers are running at any given time.
 
 sub _poe_setup_sidecar_ring {
 	my ($kernel, $heap) = @_;
 
 	return if $heap->{shutdown};
 
-	while (scalar keys %{$heap->{sidecar}} < $heap->{max_sidecars}) {
+	while (scalar keys %{$heap->{sidecar}} < $heap->{max_resolvers}) {
 		my $sidecar = POE::Wheel::Run->new(
 			StdioFilter  => POE::Filter::Reference->new(),
 			StdoutEvent  => 'sidecar_response',
@@ -134,6 +148,14 @@ sub _poe_setup_sidecar_ring {
 		$kernel->sig_child($sidecar->PID(), "sidecar_signal");
 	}
 }
+
+# Internal helper sub.  This is the code that will run within each
+# sidecar process.  It accepts requests from the main process, runs
+# the blocking getaddrinfo() for each request, and returns responses.
+#
+# TODO - This would be more efficient as a stand-alone Perl program.
+# The program at large can be quite... large... and forking it for
+# just this snip of code seems inefficient.
 
 sub _sidecar_code {
 	my $filter = POE::Filter::Reference->new();
@@ -165,8 +187,23 @@ sub _sidecar_code {
 	}
 }
 
+# Internal helper sub to replay pending requests when their associated
+# sidecars are destroyed.
+
 sub _poe_replay_pending {
 	my ($kernel, $heap) = @_;
+
+	# TODO - Broken implementation.  This worked when we had a single
+	# sidecar, but now we have many.  We need to only replay the pending
+	# requests that aren't associated with a currently active sidecar.
+	#
+	# There must be a mapping from requests to sidecars.  We can check
+	# whether $request->{sidecar_id} (or such) exists.  If not, we can
+	# replay it to a new sidecar.
+
+	# TODO - We should have some sort of retry count.  I can foresee a
+	# case where particular input crashes a sidecar process.  Replaying
+	# that input indefinitely would just perform a fork/crash thrash.
 
 	while (my ($request_id, $request) = each %{$heap->{requests}}) {
 		my $next_sidecar = pop @{$heap->{sidecar_ring}};
@@ -180,6 +217,10 @@ sub _poe_replay_pending {
 	}
 }
 
+# Internal event handler to briefly defer replaying requests until any
+# responses in the queue have had time to be delivered.  This prevents
+# us from replaying requests that may already have answers.
+
 sub _poe_sidecar_attach {
 	my ($kernel, $heap) = @_[KERNEL, HEAP];
 
@@ -191,7 +232,7 @@ sub _poe_sidecar_attach {
 	_poe_replay_pending($kernel, $heap);
 }
 
-### Public entry point.  Begin resolving something.
+# Plain public Perl method.  Begin resolving something.
 
 sub resolve {
 	my ($self, @args) = @_;
@@ -226,9 +267,16 @@ sub resolve {
 	);
 }
 
+# A sidecar process has produced an error or warning.  Pass it
+# through to the parent process' console.
+
 sub _poe_sidecar_error {
 	warn __PACKAGE__, " error in getaddrinfo subprocess: $_[ARG0]\n";
 }
+
+# A sidecar process has closed its standard output.  We will receive
+# no more responses from it.  Clean up the sidecar's resources, and
+# start new ones if necessary.
 
 sub _poe_sidecar_closed {
 	my ($kernel, $heap, $wheel_id) = @_[KERNEL, HEAP, ARG0];
@@ -254,6 +302,11 @@ sub _poe_sidecar_closed {
 	_poe_replay_pending($kernel, $heap) if scalar keys %{$heap->{requests}};
 }
 
+# A sidecar has produced a response.  Pass it back to the original
+# caller of resolve().  If we've run out of requests, briefly defer a
+# partial shutdown.  We don't need all those sidecar processes if we
+# might be done.
+
 sub _poe_sidecar_response {
 	my ($kernel, $heap, $response_rec) = @_[KERNEL, HEAP, ARG0];
 	my ($request_id, $error, $addresses) = @$response_rec;
@@ -272,6 +325,9 @@ sub _poe_sidecar_response {
 	# No more requests?  Consder detaching sidecar.
 	$kernel->yield("sidecar_eject") unless scalar keys %{$heap->{requests}};
 }
+
+# A sidecar process has exited.  Clean up its resources, and attach a
+# replacement sidecar if there are requests.
 
 sub _poe_sidecar_signal {
 	my ($heap, $pid) = @_[HEAP, ARG1];
@@ -293,10 +349,15 @@ sub _poe_sidecar_signal {
 	undef;
 }
 
+# Event handler to defer wiping out all sidecars.  This allows for
+# lazy cleanup, which may eliminate thrashing in some situations.
+
 sub _poe_sidecar_eject {
 	my ($kernel, $heap) = @_[KERNEL, HEAP];
 	_poe_wipe_sidecars($heap) unless scalar keys %{$heap->{requests}};
 }
+
+# Internal helper sub to synchronously wipe out all sidecars.
 
 sub _poe_wipe_sidecars {
 	my $heap = shift;
@@ -354,9 +415,5 @@ POE::Component::Resolver - A non-blocking wrapper for getaddrinfo()
 
 POE::Component::Resolver makes Socket::GetAddrInfo::getaddrinfo()
 calls in a subprocess, where their blocking nature isn't an issue.
-
-=head1 TODO
-
-Finish documentation.
 
 =cut
