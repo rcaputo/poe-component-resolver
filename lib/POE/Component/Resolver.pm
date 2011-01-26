@@ -16,6 +16,8 @@ use Exporter;
 use base 'Exporter';
 our (@EXPORT_OK) = qw(AF_INET AF_INET6);
 
+our $VERSION = '0.900';
+
 # Plain Perl constructor.
 
 sub new {
@@ -76,7 +78,7 @@ sub _poe_shutdown {
 
 	$heap->{shutdown} = 1;
 
-	$kernel->alias_clear($heap->{alias});
+	$kernel->alias_remove($heap->{alias});
 
 	_poe_wipe_sidecars($heap);
 
