@@ -5,14 +5,18 @@ use strict;
 
 use lib qw(./lib);
 use POE;
-use POE::Component::Resolver;
-use Socket6 qw(AF_INET6);
+use POE::Component::Resolver qw(AF_INET AF_INET6);
 
-my $r = POE::Component::Resolver->new();
+my $r = POE::Component::Resolver->new(
+	max_resolvers => 8,
+	af_order => [ AF_INET, AF_INET6 ],
+);
 
 my @hosts = qw(
-	www.nic.cz
+	ipv6-test.com
 );
+
+my $tcp = getprotobyname("tcp");
 
 POE::Session->create(
 	inline_states => {
@@ -22,6 +26,7 @@ POE::Session->create(
 					host    => $host,
 					service => "http",
 					event   => "got_response",
+					hints   => { protocol => $tcp },
 				) or die $!;
 			}
 		},

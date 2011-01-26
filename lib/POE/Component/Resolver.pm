@@ -12,14 +12,21 @@ use Time::HiRes qw(time);
 use Socket qw(AF_INET);
 use Socket6 qw(AF_INET6);
 
+use Exporter;
+use base 'Exporter';
+our (@EXPORT_OK) = qw(AF_INET AF_INET6);
+
 # Plain Perl constructor.
 
 sub new {
-	my ($class, $args) = @_;
+	my ($class, @args) = @_;
 
-	my $max_resolvers = $args->{max_resolvers} || 8;
+	croak "new() requires an even number of parameters" if @args % 2;
+	my %args = @args;
 
-	my $af_order = $args->{af_order};
+	my $max_resolvers = delete($args{max_resolvers}) || 8;
+
+	my $af_order = delete($args{af_order});
 	if (defined $af_order) {
 		if (ref($af_order) eq "") {
 			$af_order = [ $af_order ];
@@ -31,6 +38,9 @@ sub new {
 		my @illegal_afs = grep { ($_ ne AF_INET) && ($_ ne AF_INET6) } @$af_order;
 		croak "af_order may only contain AF_INET and/or AF_INET6" if @illegal_afs;
 	}
+
+	my @error = sort keys %args;
+	croak "unknown new() parameter(s): @error" if @error;
 
 	my $self = bless { }, $class;
 
@@ -99,16 +109,6 @@ sub _poe_request {
 	my $request_id = ++$heap->{last_request_id};
 	my $sender_id  = $_[SENDER]->ID();
 
-	$heap->{requests}{$request_id} = {
-		begin   => time(),
-		host    => $host,
-		service => $service,
-		hints   => $hints,
-		sender  => $sender_id,
-		event   => $event,
-		misc    => $misc,
-	};
-
 	$kernel->refcount_increment($sender_id, __PACKAGE__);
 
 	_poe_setup_sidecar_ring($kernel, $heap);
@@ -117,6 +117,17 @@ sub _poe_request {
 	unshift @{$heap->{sidecar_ring}}, $next_sidecar;
 
 	$next_sidecar->put( [ $request_id, $host, $service, $hints ] );
+
+	$heap->{requests}{$request_id} = {
+		begin       => time(),
+		host        => $host,
+		service     => $service,
+		hints       => $hints,
+		sender      => $sender_id,
+		event       => $event,
+		misc        => $misc,
+		sidecar_id  => $next_sidecar->ID(),
+	};
 
 	return 1;
 }
@@ -211,21 +222,17 @@ sub _sidecar_code {
 sub _poe_replay_pending {
 	my ($kernel, $heap) = @_;
 
-	# TODO - Broken implementation.  This worked when we had a single
-	# sidecar, but now we have many.  We need to only replay the pending
-	# requests that aren't associated with a currently active sidecar.
-	#
-	# There must be a mapping from requests to sidecars.  We can check
-	# whether $request->{sidecar_id} (or such) exists.  If not, we can
-	# replay it to a new sidecar.
-
-	# TODO - We should have some sort of retry count.  I can foresee a
-	# case where particular input crashes a sidecar process.  Replaying
-	# that input indefinitely would just perform a fork/crash thrash.
-
 	while (my ($request_id, $request) = each %{$heap->{requests}}) {
+
+		# This request is riding in an existing sidecar.
+		# No need to replay it.
+		next if exists $heap->{sidecar_id}{$request->{sidecar_id}};
+
+		# Give the request to a new sidecar.
 		my $next_sidecar = pop @{$heap->{sidecar_ring}};
 		unshift @{$heap->{sidecar_ring}}, $next_sidecar;
+
+		$request->{sidecar_id} = $next_sidecar->ID();
 
 		$next_sidecar->put(
 			[
@@ -308,13 +315,13 @@ sub _poe_sidecar_closed {
 		delete $heap->{sidecar}{$sidecar->PID()};
 	}
 
-	# Keep sidecars in order for fairnes.
-	# TODO - Does it really matter?
-	@{$heap->{sidecar_ring}} = (
-		map { $heap->{sidecar_id}{$_} }
-		sort { $a <=> $b }
-		keys %{$heap->{sidecar_id}}
-	);
+	# Remove the sidecar from the rotation.
+	my $i = @{$heap->{sidecar_ring}};
+	while ($i--) {
+		next unless $heap->{sidecar_ring}[$i]->ID() == $wheel_id;
+		splice(@{$heap->{sidecar_ring}}, 1, 1);
+		last;
+	}
 
 	_poe_setup_sidecar_ring($kernel, $heap);
 	_poe_replay_pending($kernel, $heap) if scalar keys %{$heap->{requests}};
@@ -360,15 +367,16 @@ sub _poe_sidecar_signal {
 
 	return unless exists $heap->{sidecar}{$pid};
 	my $sidecar = delete $heap->{sidecar}{$pid};
-	delete $heap->{sidecar_id}{$sidecar->ID()};
+	my $sidecar_id = $sidecar->ID();
+	delete $heap->{sidecar_id}{$sidecar_id};
 
-	# Keep sidecars in order for fairnes.
-	# TODO - Does it really matter?
-	@{$heap->{sidecar_ring}} = (
-		map { $heap->{sidecar_id}{$_} }
-		sort { $a <=> $b }
-		keys %{$heap->{sidecar_id}}
-	);
+	# Remove the sidecar from the rotation.
+	my $i = @{$heap->{sidecar_ring}};
+	while ($i--) {
+		next unless $heap->{sidecar_ring}[$i]->ID() == $sidecar_id;
+		splice(@{$heap->{sidecar_ring}}, 1, 1);
+		last;
+	}
 
 	$_[KERNEL]->yield("sidecar_attach") if scalar keys %{$heap->{requests}};
 
@@ -388,14 +396,15 @@ sub _poe_sidecar_eject {
 sub _poe_wipe_sidecars {
 	my $heap = shift;
 
-	if (@{$heap->{sidecar_ring}}) {
-		foreach my $sidecar (@{$heap->{sidecar_ring}}) {
-			$sidecar->kill(-9);
-		}
-		delete $heap->{sidecar};
-		delete $heap->{sidecar_id};
-		delete $heap->{sidecar_ring};
+	return unless @{$heap->{sidecar_ring}};
+
+	foreach my $sidecar (@{$heap->{sidecar_ring}}) {
+		$sidecar->kill(-9);
 	}
+
+	delete $heap->{sidecar};
+	delete $heap->{sidecar_id};
+	delete $heap->{sidecar_ring};
 }
 
 1;
@@ -414,15 +423,21 @@ POE::Component::Resolver - A non-blocking wrapper for getaddrinfo()
 	use POE;
 	use POE::Component::Resolver;
 
-	my $r = POE::Component::Resolver->new();
+	my $r = POE::Component::Resolver->new(
+		max_resolvers => 8,
+		af_order      => [ AF_INET, AF_INET6 ],
+	);
+
+	my $tcp = getprotobyname("tcp");
 
 	POE::Session->create(
 		inline_states => {
 			_start => sub {
 				$r->resolve(
-					host => "www.yahoo.com",
+					host    => "ipv6-test.com",
 					service => "http",
-					event => "got_response"
+					event   => "got_response"
+					hints   => { protocol => $tcp },
 				) or die $!;
 			},
 
