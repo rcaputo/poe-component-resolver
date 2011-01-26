@@ -9,8 +9,8 @@ use Carp qw(croak);
 use Storable qw(nfreeze thaw);
 use Socket::GetAddrInfo qw(:newapi getaddrinfo);
 use Time::HiRes qw(time);
-use Socket qw(AF_INET);
-use Socket6 qw(AF_INET6);
+use Socket qw(unpack_sockaddr_in AF_INET);
+use Socket6 qw(inet_ntop unpack_sockaddr_in6 AF_INET6);
 
 use Exporter;
 use base 'Exporter';
@@ -407,6 +407,22 @@ sub _poe_wipe_sidecars {
 	delete $heap->{sidecar_ring};
 }
 
+sub unpack_addr {
+	my ($self, $address_rec) = @_;
+
+	my ($port, $address);
+	if ($address_rec->{family} == AF_INET) {
+		($port, $address) = unpack_sockaddr_in($address_rec->{addr});
+	}
+	else {
+		($port, $address) = unpack_sockaddr_in6($address_rec->{addr});
+	}
+
+	return unless defined $address;
+	return($port, inet_ntop($address_rec->{family}, $address)) if wantarray();
+	return inet_ntop($address_rec->{family}, $address);
+}
+
 1;
 
 __END__
@@ -527,6 +543,39 @@ details.
 
 "misc" is optional continuation data that will be passed back in the
 response.  It may contain any type of data the application requires.
+
+=head3 unpack_addr
+
+In scalar context, unpack_addr($response_addr_hashref) returns the
+addr element of $response_addr_hashref in a numeric form appropriate
+for the address family of the address.
+
+	sub handle_resolver_response {
+		my ($error, $addresses, $request) = @_[ARG0..ARG2];
+
+		foreach my $a (@$addresses) {
+			my $numeric_addr = $resolver->unpack_addr($a);
+			print "$request->{host} = $numeric_addr\n";
+		}
+	}
+
+In list context, it returns the numeric port and address.
+
+	sub handle_resolver_response {
+		my ($error, $addresses, $request) = @_[ARG0..ARG2];
+
+		foreach my $a (@$addresses) {
+			my ($port, $numeric_addr) = $resolver->unpack_addr($a);
+			print "$request->{host} = $numeric_addr\n";
+		}
+	}
+
+unpack_addr() is a convenience wrapper around unpack_sockaddr_in()
+from Socket, and both unpack_sockaddr_in6 and inet_ntop() from
+Socket6.  You're welcome to use the discrete functions instead.
+
+unpack_addr() returns bleak emptiness on failure, regardless of
+context.  You can check for undef return.
 
 =head3 DESTROY
 

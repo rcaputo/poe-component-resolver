@@ -65,6 +65,10 @@ POE::Session->create(
 		resolver_response => sub {
 			my ($error, $addresses, $request) = @_[ARG0..ARG2];
 
+			foreach my $a (@$addresses) {
+				diag("$request->{host} = ", scalar($r4->unpack_addr($a)));
+			}
+
 			my $expected_families = $request->{misc};
 
 			my @got_families = map { $_->{family} } @$addresses;
@@ -79,7 +83,7 @@ POE::Session->create(
 			is_deeply(
 				\@got_families,
 				$expected_families,
-				"address families are as expected",
+				"address families are as expected (@$expected_families)",
 			);
 		},
 	}
