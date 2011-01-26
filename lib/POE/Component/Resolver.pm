@@ -29,7 +29,7 @@ sub new {
 	my $max_resolvers = delete($args{max_resolvers}) || 8;
 
 	my $af_order = delete($args{af_order});
-	if (defined $af_order) {
+	if (defined $af_order and @$af_order) {
 		if (ref($af_order) eq "") {
 			$af_order = [ $af_order ];
 		}
@@ -39,6 +39,11 @@ sub new {
 
 		my @illegal_afs = grep { ($_ ne AF_INET) && ($_ ne AF_INET6) } @$af_order;
 		croak "af_order may only contain AF_INET and/or AF_INET6" if @illegal_afs;
+	}
+	else {
+		# Default to IPv4 preference for backward compatibility.
+		# TODO - Check an environment variable to override.
+		$af_order = [ AF_INET, AF_INET6 ];
 	}
 
 	my @error = sort keys %args;
@@ -87,7 +92,7 @@ sub _poe_shutdown {
 
 	_poe_wipe_sidecars($heap);
 
-	foreach my $request (%{$heap->{requests}}) {
+	foreach my $request (values %{$heap->{requests}}) {
 		$kernel->post(
 			$request->{sender},
 			$request->{event},
