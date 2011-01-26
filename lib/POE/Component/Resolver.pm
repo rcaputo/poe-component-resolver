@@ -86,7 +86,7 @@ sub _poe_shutdown {
 			$request->{event},
 			'component shut down',
 			[ ],
-			{ map { $_ => $request->{$_} } qw(host service event misc) },
+			{ map { $_ => $request->{$_} } qw(host service misc) },
 		);
 
 		$kernel->refcount_decrement($request->{sender}, __PACKAGE__);
@@ -350,7 +350,7 @@ sub _poe_sidecar_response {
 	$kernel->post(
 		$request_rec->{sender}, $request_rec->{event},
 		$error, $addresses,
-		{ map { $_ => $request_rec->{$_} } qw(host service event misc) },
+		{ map { $_ => $request_rec->{$_} } qw(host service misc) },
 	);
 
 	$kernel->refcount_decrement($request_rec->{sender}, __PACKAGE__);
@@ -413,39 +413,50 @@ __END__
 
 =head1 NAME
 
-POE::Component::Resolver - A non-blocking wrapper for getaddrinfo()
+POE::Component::Resolver - A non-blocking getaddrinfo() resolver
 
 =head1 SYNOPSIS
+
+	#!/usr/bin/perl
 
 	use warnings;
 	use strict;
 
 	use POE;
-	use POE::Component::Resolver;
+	use POE::Component::Resolver qw(AF_INET AF_INET6);
 
 	my $r = POE::Component::Resolver->new(
 		max_resolvers => 8,
-		af_order      => [ AF_INET, AF_INET6 ],
+		af_order => [ AF_INET6, AF_INET ],
 	);
 
-	my $tcp = getprotobyname("tcp");
+	my @hosts = qw( ipv6-test.com );
+	my $tcp   = getprotobyname("tcp");
 
 	POE::Session->create(
 		inline_states => {
 			_start => sub {
-				$r->resolve(
-					host    => "ipv6-test.com",
-					service => "http",
-					event   => "got_response"
-					hints   => { protocol => $tcp },
-				) or die $!;
+				foreach my $host (@hosts) {
+					$r->resolve(
+						host    => $host,
+						service => "http",
+						event   => "got_response",
+						hints   => { protocol => $tcp },
+					) or die $!;
+				}
 			},
 
 			_stop => sub { print "client session stopped\n" },
 
 			got_response => sub {
-				my ($error, $addresses) = @_[ARG0..ARG1];
-				use YAML; print YAML::Dump({ error => $error, addr => $addresses });
+				my ($error, $addresses, $request) = @_[ARG0..ARG2];
+				use YAML; print YAML::Dump(
+					{
+						error => $error,
+						addr => $addresses,
+						req => $request,
+					}
+				);
 			},
 		}
 	);
@@ -454,7 +465,105 @@ POE::Component::Resolver - A non-blocking wrapper for getaddrinfo()
 
 =head1 DESCRIPTION
 
-POE::Component::Resolver makes Socket::GetAddrInfo::getaddrinfo()
-calls in a subprocess, where their blocking nature isn't an issue.
+POE::Component::Resolver performs Socket::GetAddrInfo::getaddrinfo()
+calls in subprocesses where they're permitted to block as long as
+necessary.
+
+By default it will run eight subprocesses and prefer address families
+in whatever order Socket::GetAddrInfo returns them.  These defaults
+can be overridden with constructor parameters.
+
+=head2 PUBLIC METHODS
+
+=head3 new
+
+Create a new resolver.  Returns an object that must be held and used
+to make requests.  See the synopsis.
+
+Accepts up to two optional named parameters.
+
+"af_order" may contain an arrayref with the address families to
+permit, in the order in which they're preferred.  Without "af_order",
+the component will return addresses in the order in which
+Socket::GetAddrInfo provides them.
+
+	# Prefer IPv6 addresses, but also return IPv4 ones.
+	my $r1 = POE::Component::Resolver->new(
+		af_order => [ AF_INET6, AF_INET ]
+	);
+
+	# Only return AF_INET6 addresses.
+	my $r2 = POE::Component::Resolver->new(
+		af_order => [ AF_INET6 ]
+	);
+
+"max_resolvers" controls the component's parallelism by defining the
+maximum number of sidecar processes to manage.  It defaults to 8, but
+fewer or more processes can be configured depending on usage
+requirements.
+
+	# One at a time, but without the pesky blocking.
+	my $r3 = POE::Component::Resolver->new( max_resolvers => 1 );
+
+=head3 resolve
+
+resolve() begins a new request to resolve a domain.  The request will
+be enqueued in the component until a sidecar process can service it.
+Resolve requires two parameters and accepts some additional optional
+ones.
+
+"host" and "service" are required and contain the host (name or
+Internet address) and service (name or numeric port) that will be
+passed verbatim to getaddrinfo().  See L<Socket::GetAddrInfo> for
+details.
+
+"event" is optional; it contains the name of the event that will
+contain the resolver response.  If omitted, it will default to
+"resolver_response"; you may want to specify a shorter event name.
+
+"hints" is optional.  If specified, it must contain a hashref of hints
+exactly as getaddrinfo() expects them.  See L<Socket::GetAddrInfo> for
+details.
+
+"misc" is optional continuation data that will be passed back in the
+response.  It may contain any type of data the application requires.
+
+=head3 DESTROY
+
+This component is shut down when it's destroyed, following Perl's
+rules for object destruction.  Any pending requests are canceled, and
+their responses will be errors.
+
+=head2 PUBLIC EVENTS
+
+=head3 resolver_response
+
+The resolver response event includes three parameters.
+
+$_[ARG0] and $_[ARG1] contain the retrn values from
+Socket::GetAddrInfo's getaddrinfo() call.  These are an error message
+(if the call failed), and an arrayref of address structures if the
+call succeeded.
+
+The component provides its own error message, 'component shut down'.
+This response is given for every pending request at the time the user
+shuts down the component.
+
+$_[ARG2] contains a hashref of information provided to the resolve()
+method.  Specifically, the values of resolve()'s "host", "service" and
+"misc" parameters.
+
+=head1 BUGS
+
+There is no timeout on requests.
+
+There is no way to cancel a pending request.
+
+=head1 LICENSE
+
+Except where otherwise noted, this distribution is Copyright 2011 by
+Rocco Caputo.  All rights reserved.  This distribution is free
+software; you may redistribute it and/or modify it under the same
+terms as Perl itself.
 
 =cut
