@@ -49,6 +49,7 @@ sub new {
 	POE::Session->create(
 		inline_states => {
 			_start           => \&_poe_start,
+			_stop            => sub { undef },  # for ASSERT_DEFAULT
 			request          => \&_poe_request,
 			shutdown         => \&_poe_shutdown,
 			sidecar_closed   => \&_poe_sidecar_closed,
@@ -66,6 +67,10 @@ sub new {
 
 sub DESTROY {
 	my $self = shift;
+
+	# Can't resolve the session: it must already be gone.
+	return unless $poe_kernel->alias_resolve("$self");
+
 	$poe_kernel->call("$self", "shutdown");
 }
 

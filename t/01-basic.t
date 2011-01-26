@@ -4,6 +4,8 @@ use warnings;
 use strict;
 use Test::More tests => 4;
 
+sub POE::Kernel::ASSERT_DEFAULT () { 1 }
+
 use POE;
 use POE::Component::Resolver qw(AF_INET AF_INET6);
 
@@ -86,7 +88,9 @@ POE::Session->create(
 				"address families are as expected (@$expected_families)",
 			);
 		},
-	}
+
+		_stop => sub { undef }, # for ASSERT_DEFAULT
+	},
 );
 
 POE::Kernel->run();
