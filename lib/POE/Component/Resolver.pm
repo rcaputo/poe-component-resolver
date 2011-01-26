@@ -152,6 +152,7 @@ sub _poe_start {
 	$heap->{last_reuqest_id} = 0;
 	$heap->{alias}           = $alias;
 	$heap->{max_resolvers}   = $max_resolvers;
+	$heap->{sidecar_ring}    = [];
 
 	$kernel->alias_set($alias);
 
@@ -409,9 +410,9 @@ sub _poe_wipe_sidecars {
 		$sidecar->kill(-9);
 	}
 
-	delete $heap->{sidecar};
-	delete $heap->{sidecar_id};
-	delete $heap->{sidecar_ring};
+	$heap->{sidecar}      = {};
+	$heap->{sidecar_id}   = {};
+	$heap->{sidecar_ring} = [];
 }
 
 sub unpack_addr {
