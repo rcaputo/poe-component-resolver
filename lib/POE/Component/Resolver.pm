@@ -290,10 +290,10 @@ sub resolve {
 	);
 
 	my $misc = delete $args{misc};
-	$misc //= "";
+	$misc = "" unless defined $misc;
 
 	my $hints = delete $args{hints};
-	$hints //= { };
+	$hints ||= { };
 
 	my $event = delete $args{event};
 	$event = "resolver_response" unless defined $event and length $event;
