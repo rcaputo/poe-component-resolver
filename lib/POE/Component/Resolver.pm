@@ -7,10 +7,11 @@ use POE qw(Wheel::Run Filter::Reference);
 use Scalar::Util qw(weaken);
 use Carp qw(croak);
 use Storable qw(nfreeze thaw);
-use Socket::GetAddrInfo qw(:newapi getaddrinfo);
+use Socket::GetAddrInfo qw(
+	:newapi getaddrinfo getnameinfo NI_NUMERICHOST NI_NUMERICSERV
+);
 use Time::HiRes qw(time);
-use Socket qw(unpack_sockaddr_in AF_INET);
-use Socket6 qw(inet_ntop unpack_sockaddr_in6 AF_INET6);
+use Socket qw(unpack_sockaddr_in AF_INET AF_INET6);
 
 use Exporter;
 use base 'Exporter';
@@ -426,17 +427,13 @@ sub _poe_wipe_sidecars {
 sub unpack_addr {
 	my ($self, $address_rec) = @_;
 
-	my ($port, $address);
-	if ($address_rec->{family} == AF_INET) {
-		($port, $address) = unpack_sockaddr_in($address_rec->{addr});
-	}
-	else {
-		($port, $address) = unpack_sockaddr_in6($address_rec->{addr});
-	}
+	my ($error, $address, $port) = (
+		(getnameinfo $address_rec->{addr}, NI_NUMERICHOST | NI_NUMERICSERV)[0,1]
+	);
 
-	return unless defined $address;
-	return($port, inet_ntop($address_rec->{family}, $address)) if wantarray();
-	return inet_ntop($address_rec->{family}, $address);
+	return if $error;
+	return($address, $port) if wantarray();
+	return $address;
 }
 
 1;
@@ -581,14 +578,14 @@ In list context, it returns the numeric port and address.
 		my ($error, $addresses, $request) = @_[ARG0..ARG2];
 
 		foreach my $a (@$addresses) {
-			my ($port, $numeric_addr) = $resolver->unpack_addr($a);
+			my ($$numeric_addr, $port) = $resolver->unpack_addr($a);
 			print "$request->{host} = $numeric_addr\n";
 		}
 	}
 
-unpack_addr() is a convenience wrapper around unpack_sockaddr_in()
-from Socket, and both unpack_sockaddr_in6 and inet_ntop() from
-Socket6.  You're welcome to use the discrete functions instead.
+unpack_addr() is a convenience wrapper around getnameinfo() from
+Socket::GetAddrInfo.  You're certainly welcome to use the discrete
+function instead.
 
 unpack_addr() returns bleak emptiness on failure, regardless of
 context.  You can check for undef return.
