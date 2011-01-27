@@ -204,6 +204,9 @@ sub _sidecar_code {
 	my $buffer = "";
 	my $read_length;
 
+	binmode(STDOUT);
+	use bytes;
+
 	while (1) {
 		if (defined $read_length) {
 			if (length($buffer) >= $read_length) {
