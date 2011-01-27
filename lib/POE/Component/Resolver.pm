@@ -618,6 +618,34 @@ $_[ARG2] contains a hashref of information provided to the resolve()
 method.  Specifically, the values of resolve()'s "host", "service" and
 "misc" parameters.
 
+=head1 COMPATIBILITY ISSUES
+
+=head2 Microsoft Windows
+
+This module requires "Microsoft TCP/IP version 6" to be installed.
+Steps for Windows XP Pro (the steps for your particular version of
+Windows may be subtly or drastically different):
+
+=over
+
+=item * Open your Control Panel
+
+=item * Open your Network Connections
+
+=item * Select your network connection from the available one(s)
+
+=item * In the Local Area Connection Status dialog, click the Properties button
+
+=item * If "Microsoft TCP/IP version 6" is listed as an item being used, you are done.
+
+=item * Otherwise click Install...
+
+=item * Choose to add a Protocol
+
+=item * And install "Microsoft TCP/IP version 6" from the list of network protocols.
+
+=back
+
 =head1 BUGS
 
 There is no timeout on requests.
