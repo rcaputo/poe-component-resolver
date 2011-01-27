@@ -14,20 +14,38 @@ my $r4 = POE::Component::Resolver->new(
 	af_order      => [ AF_INET ],
 );
 
-my $r6 = POE::Component::Resolver->new(
-	max_resolvers => 1,
-	af_order      => [ AF_INET6 ],
-);
+# Try to detect whether we can resolve IPv6 addresses at all.
 
-my $r46 = POE::Component::Resolver->new(
-	max_resolvers => 1,
-	af_order      => [ AF_INET, AF_INET6 ],
-);
+use Socket::GetAddrInfo qw(:newapi getaddrinfo);
+my $has_ipv6 = do {
+	my ($error, @addresses) = getaddrinfo(
+		"localhost", "www", { family => AF_INET6 }
+	);
+	($error or not @addresses) ? 0 : 1;
+};
 
-my $r64 = POE::Component::Resolver->new(
-	max_resolvers => 1,
-	af_order      => [ AF_INET6, AF_INET ],
-);
+# If we can't, don't bother setting up resolvers for them.
+
+my ($r6, $r46, $r64);
+if ($has_ipv6) {
+	$r6 = POE::Component::Resolver->new(
+		max_resolvers => 1,
+		af_order      => [ AF_INET6 ],
+	);
+
+	$r46 = POE::Component::Resolver->new(
+		max_resolvers => 1,
+		af_order      => [ AF_INET, AF_INET6 ],
+	);
+
+	$r64 = POE::Component::Resolver->new(
+		max_resolvers => 1,
+		af_order      => [ AF_INET6, AF_INET ],
+	);
+}
+
+# TODO - Not robust to try a single remote host.  I fully expect this
+# to bite me later, unless someone wants to take a shot at it.
 
 my $host = 'ipv6-test.com';
 my $tcp  = getprotobyname("tcp");
@@ -42,26 +60,30 @@ POE::Session->create(
 				misc    => [ AF_INET ],
 			) or die $!;
 
-			$r6->resolve(
-				host    => $host,
-				service => 'http',
-				hints   => { protocol => $tcp },
-				misc    => [ AF_INET6 ],
-			) or die $!;
+			SKIP: {
+				skip("IPv6 not detected; skipping IPv6 tests", 3) unless $has_ipv6;
 
-			$r46->resolve(
-				host    => $host,
-				service => 'http',
-				hints   => { protocol => $tcp },
-				misc    => [ AF_INET, AF_INET6 ],
-			) or die $!;
+				$r6->resolve(
+					host    => $host,
+					service => 'http',
+					hints   => { protocol => $tcp },
+					misc    => [ AF_INET6 ],
+				) or die $!;
 
-			$r64->resolve(
-				host    => $host,
-				service => 'http',
-				hints   => { protocol => $tcp },
-				misc    => [ AF_INET6, AF_INET ],
-			) or die $!;
+				$r46->resolve(
+					host    => $host,
+					service => 'http',
+					hints   => { protocol => $tcp },
+					misc    => [ AF_INET, AF_INET6 ],
+				) or die $!;
+
+				$r64->resolve(
+					host    => $host,
+					service => 'http',
+					hints   => { protocol => $tcp },
+					misc    => [ AF_INET6, AF_INET ],
+				) or die $!;
+			}
 		},
 
 		resolver_response => sub {
