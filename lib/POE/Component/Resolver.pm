@@ -17,8 +17,6 @@ use Exporter;
 use base 'Exporter';
 our (@EXPORT_OK) = qw(AF_INET AF_INET6);
 
-our $VERSION = '0.900';
-
 # Plain Perl constructor.
 
 sub new {
