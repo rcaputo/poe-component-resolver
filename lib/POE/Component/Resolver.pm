@@ -54,6 +54,8 @@ sub new {
 		inline_states => {
 			_start           => \&_poe_start,
 			_stop            => sub { undef },  # for ASSERT_DEFAULT
+			_parent          => sub { undef },  # for ASSERT_DEFAULT
+			_child           => sub { undef },  # for ASSERT_DEFAULT
 			request          => \&_poe_request,
 			shutdown         => \&_poe_shutdown,
 			sidecar_closed   => \&_poe_sidecar_closed,
