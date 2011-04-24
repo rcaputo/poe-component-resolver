@@ -11,6 +11,7 @@ use POE::Component::Resolver qw(AF_INET AF_INET6);
 
 my $r4 = POE::Component::Resolver->new(
 	max_resolvers => 1,
+	idle_timeout  => 1,
 	af_order      => [ AF_INET ],
 );
 
@@ -30,16 +31,19 @@ my ($r6, $r46, $r64);
 if ($has_ipv6) {
 	$r6 = POE::Component::Resolver->new(
 		max_resolvers => 1,
+		idle_timeout  => 1,
 		af_order      => [ AF_INET6 ],
 	);
 
 	$r46 = POE::Component::Resolver->new(
 		max_resolvers => 1,
+		idle_timeout  => 1,
 		af_order      => [ AF_INET, AF_INET6 ],
 	);
 
 	$r64 = POE::Component::Resolver->new(
 		max_resolvers => 1,
+		idle_timeout  => 1,
 		af_order      => [ AF_INET6, AF_INET ],
 	);
 }
