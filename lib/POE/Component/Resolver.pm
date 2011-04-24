@@ -4,14 +4,10 @@ use warnings;
 use strict;
 
 use POE qw(Wheel::Run Filter::Reference);
-use Scalar::Util qw(weaken);
 use Carp qw(croak);
-use Storable qw(nfreeze thaw);
-use Socket::GetAddrInfo qw(
-	:newapi getaddrinfo getnameinfo NI_NUMERICHOST NI_NUMERICSERV
-);
 use Time::HiRes qw(time);
 use Socket qw(unpack_sockaddr_in AF_INET AF_INET6);
+use Socket::GetAddrInfo qw(:newapi getnameinfo NI_NUMERICHOST NI_NUMERICSERV);
 
 use Exporter;
 use base 'Exporter';
@@ -184,7 +180,17 @@ sub _poe_setup_sidecar_ring {
 			StdoutEvent  => 'sidecar_response',
 			StderrEvent  => 'sidecar_error',
 			CloseEvent   => 'sidecar_closed',
-			Program      => \&_sidecar_code,
+			Program      => (
+				($^O eq "MSWin32")
+				? \&POE::Component::Resolver::Sidecar::main
+				: [
+					$^X,
+					(map { "-I$_" } @INC),
+					'-MPOE::Component::Resolver::Sidecar',
+					'-e',
+					'POE::Component::Resolver::Sidecar->main()'
+				]
+			),
 		);
 
 		$heap->{sidecar}{$sidecar->PID}   = $sidecar;
@@ -192,47 +198,6 @@ sub _poe_setup_sidecar_ring {
 		push @{$heap->{sidecar_ring}}, $sidecar;
 
 		$kernel->sig_child($sidecar->PID(), "sidecar_signal");
-	}
-}
-
-# Internal helper sub.  This is the code that will run within each
-# sidecar process.  It accepts requests from the main process, runs
-# the blocking getaddrinfo() for each request, and returns responses.
-#
-# TODO - This would be more efficient as a stand-alone Perl program.
-# The program at large can be quite... large... and forking it for
-# just this snip of code seems inefficient.
-
-sub _sidecar_code {
-	my $filter = POE::Filter::Reference->new();
-	my $buffer = "";
-	my $read_length;
-
-	binmode(STDOUT);
-	use bytes;
-
-	while (1) {
-		if (defined $read_length) {
-			if (length($buffer) >= $read_length) {
-				my $request = thaw(substr($buffer, 0, $read_length, ""));
-				$read_length = undef;
-
-				my ($request_id, $host, $service, $hints) = @$request;
-				my ($err, @addrs) = getaddrinfo($host, $service, $hints);
-
-				my $streamable = nfreeze( [ $request_id, $err, \@addrs ] );
-				print length($streamable), chr(0), $streamable;
-
-				next;
-			}
-		}
-		elsif ($buffer =~ s/^(\d+)\0//) {
-			$read_length = $1;
-			next;
-		}
-
-		my $octets_read = sysread(STDIN, $buffer, 4096, length($buffer));
-		last unless $octets_read;
 	}
 }
 
