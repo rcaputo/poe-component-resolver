@@ -5,9 +5,7 @@ use strict;
 
 use Storable qw(nfreeze thaw);
 
-use Socket::GetAddrInfo qw(
-	:newapi getaddrinfo getnameinfo NI_NUMERICHOST NI_NUMERICSERV
-);
+use Socket::GetAddrInfo qw(:newapi getaddrinfo);
 
 sub main {
 	my $buffer = "";
