@@ -85,6 +85,15 @@ sub DESTROY {
 	$poe_kernel->call("$self", "shutdown");
 }
 
+sub shutdown {
+	my $self = shift;
+
+	# Can't resolve the session: it must already be gone.
+	return unless $poe_kernel->alias_resolve("$self");
+
+	$poe_kernel->call("$self", "shutdown");
+}
+
 # Internal POE event handler to release all resources owned by the
 # hidden POE::Session and then shut it down.  It's an event handler so
 # that this code can run "within" the POE::Session.
@@ -531,6 +540,16 @@ details.
 "misc" is optional continuation data that will be passed back in the
 response.  It may contain any type of data the application requires.
 
+=head3 shutdown
+
+Shut down the resolver.  POE::Component::Resolver retains resources
+including child processes for up to "idle_timeout" seconds.  This may
+keep programs running up to "idle_timeout" seconds longer than they
+should.
+
+POE::Component::Resolver will release its resources (including child
+processes) when its shutdown() method is called.
+
 =head3 unpack_addr
 
 In scalar context, unpack_addr($response_addr_hashref) returns the
@@ -563,12 +582,6 @@ function instead.
 
 unpack_addr() returns bleak emptiness on failure, regardless of
 context.  You can check for undef return.
-
-=head3 DESTROY
-
-This component is shut down when it's destroyed, following Perl's
-rules for object destruction.  Any pending requests are canceled, and
-their responses will be errors.
 
 =head2 PUBLIC EVENTS
 
@@ -627,8 +640,10 @@ There is no way to cancel a pending request.
 
 =head2 programs linger for several seconds before exiting
 
-Programs should destroy their POE::Component::Resolver objects when
-they are through needing asynchronous DNS resolution.
+Programs should shutdown() their POE::Component::Resolver objects when
+they are through needing asynchronous DNS resolution.  Programs should
+additionally destroy their resolvers if they intend to run awhile and
+want to reuse the memory they consume.
 
 In some cases, it may be necessary to shutdown components that perform
 asynchronous DNS using POE::Component::Resolver... such as
