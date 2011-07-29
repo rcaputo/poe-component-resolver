@@ -53,13 +53,14 @@ if ($has_ipv6) {
 
 my $host = 'ipv6-test.com';
 my $tcp  = getprotobyname("tcp");
+my $service = $^O eq 'solaris' ? 80 : 'http';
 
 POE::Session->create(
 	inline_states => {
 		_start => sub {
 			$r4->resolve(
 				host    => $host,
-				service => 'http',
+				service => $service,,
 				hints   => { protocol => $tcp },
 				misc    => [ AF_INET ],
 			) or die $!;
@@ -69,21 +70,21 @@ POE::Session->create(
 
 				$r6->resolve(
 					host    => $host,
-					service => 'http',
+					service => $service,
 					hints   => { protocol => $tcp },
 					misc    => [ AF_INET6 ],
 				) or die $!;
 
 				$r46->resolve(
 					host    => $host,
-					service => 'http',
+					service => $service,
 					hints   => { protocol => $tcp },
 					misc    => [ AF_INET, AF_INET6 ],
 				) or die $!;
 
 				$r64->resolve(
 					host    => $host,
-					service => 'http',
+					service => $service,
 					hints   => { protocol => $tcp },
 					misc    => [ AF_INET6, AF_INET ],
 				) or die $!;
