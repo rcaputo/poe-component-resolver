@@ -9,6 +9,8 @@ use Time::HiRes qw(time);
 use Socket qw(unpack_sockaddr_in AF_INET AF_INET6);
 use Socket::GetAddrInfo qw(:newapi getnameinfo NI_NUMERICHOST NI_NUMERICSERV);
 
+use POE::Component::Resolver::Sidecar;
+
 use Exporter;
 use base 'Exporter';
 our (@EXPORT_OK) = qw(AF_INET AF_INET6);
