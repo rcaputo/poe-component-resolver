@@ -23,8 +23,9 @@ sub new {
 	croak "new() requires an even number of parameters" if @args % 2;
 	my %args = @args;
 
-	my $max_resolvers = delete($args{max_resolvers}) || 8;
-	my $idle_timeout  = delete($args{idle_timeout})  || 15;
+	my $max_resolvers   = delete($args{max_resolvers}) || 8;
+	my $idle_timeout    = delete($args{idle_timeout})  || 15;
+	my $sidecar_program = delete($args{sidecar_program});
 
 	my $af_order = delete($args{af_order});
 	if (defined $af_order and @$af_order) {
@@ -46,6 +47,20 @@ sub new {
 
 	my @error = sort keys %args;
 	croak "unknown new() parameter(s): @error" if @error;
+
+	unless (defined $sidecar_program and length $sidecar_program) {
+		if ($^O eq "MSWin32") {
+			$sidecar_program = \&POE::Component::Resolver::Sidecar::main;
+		}
+		else {
+			$sidecar_program = [
+				$^X,
+				(map { "-I$_" } @INC),
+				'-MPOE::Component::Resolver::Sidecar',
+				'-e', 'POE::Component::Resolver::Sidecar->main()'
+			];
+		}
+	}
 
 	my $self = bless { }, $class;
 
@@ -72,6 +87,7 @@ sub new {
 			max_resolvers   => $max_resolvers,
 			requests        => { },
 			sidecar_ring    => [ ],
+			sidecar_program => $sidecar_program,
 		}
 	);
 
@@ -191,17 +207,7 @@ sub _poe_setup_sidecar_ring {
 			StdoutEvent  => 'sidecar_response',
 			StderrEvent  => 'sidecar_error',
 			CloseEvent   => 'sidecar_closed',
-			Program      => (
-				($^O eq "MSWin32")
-				? \&POE::Component::Resolver::Sidecar::main
-				: [
-					$^X,
-					(map { "-I$_" } @INC),
-					'-MPOE::Component::Resolver::Sidecar',
-					'-e',
-					'POE::Component::Resolver::Sidecar->main()'
-				]
-			),
+			Program      => $heap->{sidecar_program},
 		);
 
 		$heap->{sidecar}{$sidecar->PID}   = $sidecar;
@@ -439,6 +445,7 @@ POE::Component::Resolver - A non-blocking getaddrinfo() resolver
 		max_resolvers => 8,
 		idle_timeout  => 5,
 		af_order      => [ AF_INET6, AF_INET ],
+		# sidecar_program => $path_to_program,
 	);
 
 	my @hosts = qw( ipv6-test.com );
@@ -491,7 +498,7 @@ can be overridden with constructor parameters.
 Create a new resolver.  Returns an object that must be held and used
 to make requests.  See the synopsis.
 
-Accepts up to two optional named parameters.
+Accepts up to four optional named parameters.
 
 "af_order" may contain an arrayref with the address families to
 permit, in the order in which they're preferred.  Without "af_order",
@@ -518,6 +525,17 @@ you have available and the amount of parallelism you require.
 
 	# One at a time, but without the pesky blocking.
 	my $r3 = POE::Component::Resolver->new( max_resolvers => 1 );
+
+"sidecar_program" contains the disk location of a program that will
+perform blocking lookups on standard input and print the results on
+standard output.  The sidecar program is needed only in special
+environments where the bundling and execution of extra utilities is
+tricky.  PAR is one such environment.
+
+The sidecar program needs to contain at least two statements:
+
+	use POE::Component::Resolver::Sidecar;
+	POE::Component::Resover::Sidecar->main();
 
 =head3 resolve
 
