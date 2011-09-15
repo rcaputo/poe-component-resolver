@@ -15,6 +15,16 @@ use Exporter;
 use base 'Exporter';
 our (@EXPORT_OK) = qw(AF_INET AF_INET6);
 
+# Determine Perl's location, per perldoc perlvar's treatment of $^X.
+
+use Config;
+my $perl_path = $Config{perlpath};
+if ($^O ne 'VMS') {
+	$perl_path .= $Config{_exe} unless (
+		$perl_path =~ /$Config{_exe}$/i
+	);
+}
+
 # Plain Perl constructor.
 
 sub new {
@@ -54,7 +64,7 @@ sub new {
 		}
 		else {
 			$sidecar_program = [
-				$^X,
+				$perl_path,
 				(map { "-I$_" } @INC),
 				'-MPOE::Component::Resolver::Sidecar',
 				'-e', 'POE::Component::Resolver::Sidecar->main()'
