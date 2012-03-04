@@ -20,7 +20,7 @@ my $r4 = POE::Component::Resolver->new(
 use Socket::GetAddrInfo qw(:newapi getaddrinfo);
 my $has_ipv6 = do {
 	my ($error, @addresses) = getaddrinfo(
-		"localhost", "www", { family => AF_INET6 }
+		"ipv6.test-ipv6.com", "www", { family => AF_INET6 }
 	);
 	($error or not @addresses) ? 0 : 1;
 };
