@@ -269,7 +269,7 @@ sub _poe_sidecar_attach {
 	my ($kernel, $heap) = @_[KERNEL, HEAP];
 
 	# Nothing to do if we don't have requests.
-	return unless scalar keys %{$heap->{reuqests}};
+	return unless scalar keys %{$heap->{requests}};
 
 	# Requests exist.
 	_poe_setup_sidecar_ring($kernel, $heap);
