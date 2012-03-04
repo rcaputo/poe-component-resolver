@@ -49,9 +49,16 @@ sub new {
 		my @illegal_afs = grep { ($_ ne AF_INET) && ($_ ne AF_INET6) } @$af_order;
 		croak "af_order may only contain AF_INET and/or AF_INET6" if @illegal_afs;
 	}
-	else {
+	elsif (exists $ENV{POCO_RESOLVER_IPV}) {
+		my %number_to_address_family = ( 4 => AF_INET, 6 => AF_INET6 );
+		$af_order = [
+			map { $number_to_address_family{$_} }
+			($ENV{POCO_RESOLVER_IPV} =~ m/([46])/g)
+		];
+	}
+
+	unless ($af_order and @$af_order) {
 		# Default to IPv4 preference for backward compatibility.
-		# TODO - Check an environment variable to override.
 		$af_order = [ AF_INET, AF_INET6 ];
 	}
 
@@ -512,15 +519,18 @@ Accepts up to four optional named parameters.
 
 "af_order" may contain an arrayref with the address families to
 permit, in the order in which they're preferred.  Without "af_order",
-the component will return addresses in the order in which
-Socket::GetAddrInfo provides them.
+the component will prefer IPv4 addresses over IPv6 for legacy
+compatibility.  This may change in the future as IPv6 gains more
+widespread acceptance.  See L</ENVIRONMENT VARIABLES> for a way to
+override the default without hacking modules.
 
 	# Prefer IPv6 addresses, but also return IPv4 ones.
 	my $r1 = POE::Component::Resolver->new(
 		af_order => [ AF_INET6, AF_INET ]
 	);
 
-	# Only return AF_INET6 addresses.
+	# Only return IPv6 addresses,
+	# or nothing in cases where only IPv4 addresses exist.
 	my $r2 = POE::Component::Resolver->new(
 		af_order => [ AF_INET6 ]
 	);
@@ -631,6 +641,35 @@ shuts down the component.
 $_[ARG2] contains a hashref of information provided to the resolve()
 method.  Specifically, the values of resolve()'s "host", "service" and
 "misc" parameters.
+
+=head1 ENVIRONMENT VARIABLES
+
+=head2 POCO_RESOLVER_IPV
+
+The POCO_RESOLVER_IPV environment variable sets this component's
+default Internet Protocol Version search order.  If the variable
+exists, it should contain a string with the numbers 4 and/or 6.
+POE::Component::Resolver will treate these as Internet Protocol
+versions to consider, in the order they are preferred.
+
+POE::Component::Resolver's new() method accepts an "af_order"
+parameter that overrides this environment variable.
+
+Default to IPv4 addresses only:
+
+	export POCO_RESOLVER_IPV=4
+
+Default to IPv6 addresses only:
+
+	export POCO_RESOLVER_IPV=6
+
+Prefer IPv6, but accept IPv4 if needed:
+
+	export POCO_RESOLVER_IPV=64
+
+Prefer IPv4, but accept IPv6 if needed:
+
+	export POCO_RESOLVER_IPV=46
 
 =head1 COMPATIBILITY ISSUES
 
