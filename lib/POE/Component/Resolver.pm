@@ -155,6 +155,9 @@ sub _poe_shutdown {
 	}
 
 	$heap->{requests} = {};
+
+	# No more sidecars to eject.
+	$kernel->delay(sidecar_eject => undef);
 }
 
 # POE event handler to accept a request from some other session.  The
