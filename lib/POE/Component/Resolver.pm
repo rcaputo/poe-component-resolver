@@ -341,7 +341,7 @@ sub _poe_sidecar_closed {
 	my $i = @{$heap->{sidecar_ring}};
 	while ($i--) {
 		next unless $heap->{sidecar_ring}[$i]->ID() == $wheel_id;
-		splice(@{$heap->{sidecar_ring}}, 1, 1);
+		splice(@{$heap->{sidecar_ring}}, $i, 1);
 		last;
 	}
 
