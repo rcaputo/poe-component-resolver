@@ -95,6 +95,7 @@ sub new {
 			_child           => sub { undef },  # for ASSERT_DEFAULT
 			request          => \&_poe_request,
 			shutdown         => \&_poe_shutdown,
+			cancel           => \&_poe_cancel,
 			sidecar_closed   => \&_poe_sidecar_closed,
 			sidecar_error    => \&_poe_sidecar_error,
 			sidecar_response => \&_poe_sidecar_response,
@@ -221,7 +222,31 @@ sub _poe_request {
 	# No ejecting until we're done.
 	$kernel->delay(sidecar_eject => undef);
 
-	return 1;
+	return $request_id;
+}
+
+# The user wishes to cancel a DNS request that may still be in
+# progress.  This can happen in places like PoCo::Client::HTTP when
+# the HTTP request times out before the DNS request is done.
+#
+# The public cancel() API forwards the cancelation request into the
+# POE::Session managing requests via POE::Kernel's call() method.
+
+sub cancel {
+	my ($self, $request_id) = @_;
+	return $poe_kernel->call($self->{alias}, "cancel", $request_id);
+}
+
+# The inside-POE cancelation code.  It must run within POE so that the
+# proper resources are removed from the correct session.
+
+sub _poe_cancel {
+	my ($kernel, $heap, $request_id) = @_[KERNEL, HEAP, ARG0];
+
+	return unless exists $heap->{requests}{$request_id};
+
+	my $request = $heap->{requests}{$request_id};
+	_sidecar_cleanup($kernel, $heap, $request->{sidecar_id});
 }
 
 # POE _start handler.  Initialize the session and start sidecar
@@ -363,6 +388,12 @@ sub _poe_sidecar_closed {
 
 	# Don't bother checking for pending requests if we've shut down.
 	return if $heap->{shutdown};
+
+	_sidecar_cleanup($kernel, $heap, $wheel_id);
+}
+
+sub _sidecar_cleanup {
+	my ($kernel, $heap, $wheel_id) = @_;
 
 	my $sidecar = delete $heap->{sidecar_id}{$wheel_id};
 	if (defined $sidecar) {
@@ -604,8 +635,10 @@ The sidecar program needs to contain at least two statements:
 
 resolve() begins a new request to resolve a domain.  The request will
 be enqueued in the component until a sidecar process can service it.
-Resolve requires two parameters and accepts some additional optional
-ones.
+resolve() returns a request ID that may be used to cancel() a request
+before it has completed (or undef if the request couldn't begin, such
+as during shutdown).  Resolve requires two parameters and accepts some
+additional optional ones.
 
 "host" and "service" are required and contain the host (name or
 Internet address) and service (name or numeric port) that will be
@@ -622,6 +655,13 @@ details.
 
 "misc" is optional continuation data that will be passed back in the
 response.  It may contain any type of data the application requires.
+
+=head3 cancel
+
+Cancel a request, given the request's ID.
+
+	my $request_id = $resolver->resolve("poe.dyndns.org", "http");
+	$resolver->cancel($request_id);
 
 =head3 shutdown
 
