@@ -503,7 +503,7 @@ sub unpack_addr {
 	my ($self, $address_rec) = @_;
 
 	# [rt.cpan.org 76314] Untaint the address.
-	my ($input_addr) = ($address_rec->{addr} =~ /\A(.*)\z/);
+	my ($input_addr) = ($address_rec->{addr} =~ /\A(.*)\z/s);
 
 	my ($error, $address, $port) = (
 		(getnameinfo $input_addr, NI_NUMERICHOST | NI_NUMERICSERV)[0,1]
