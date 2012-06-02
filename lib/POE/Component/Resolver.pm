@@ -7,7 +7,7 @@ use POE qw(Wheel::Run Filter::Reference);
 use Carp qw(croak carp);
 use Time::HiRes qw(time);
 use Socket qw(unpack_sockaddr_in AF_INET AF_INET6);
-use Socket::GetAddrInfo qw(:newapi getnameinfo NI_NUMERICHOST NI_NUMERICSERV);
+use Socket::GetAddrInfo qw(getnameinfo NI_NUMERICHOST NI_NUMERICSERV);
 
 use POE::Component::Resolver::Sidecar;
 
