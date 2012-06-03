@@ -17,7 +17,7 @@ my $r4 = POE::Component::Resolver->new(
 
 # Try to detect whether we can resolve IPv6 addresses at all.
 
-use Socket::GetAddrInfo qw(getaddrinfo);
+use Socket qw(getaddrinfo);
 my $has_ipv6 = do {
 	my ($error, @addresses) = getaddrinfo(
 		"ipv6.test-ipv6.com", "www", { family => AF_INET6 }

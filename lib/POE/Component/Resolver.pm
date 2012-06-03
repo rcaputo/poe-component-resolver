@@ -6,8 +6,10 @@ use strict;
 use POE qw(Wheel::Run Filter::Reference);
 use Carp qw(croak carp);
 use Time::HiRes qw(time);
-use Socket qw(unpack_sockaddr_in AF_INET AF_INET6);
-use Socket::GetAddrInfo qw(getnameinfo NI_NUMERICHOST NI_NUMERICSERV);
+use Socket qw(
+	unpack_sockaddr_in AF_INET AF_INET6
+	getnameinfo NI_NUMERICSERV NI_NUMERICHOST
+);
 
 use POE::Component::Resolver::Sidecar;
 
@@ -574,13 +576,14 @@ POE::Component::Resolver - A non-blocking getaddrinfo() resolver
 
 =head1 DESCRIPTION
 
-POE::Component::Resolver performs Socket::GetAddrInfo::getaddrinfo()
-calls in subprocesses where they're permitted to block as long as
-necessary.
+POE::Component::Resolver performs Socket::getaddrinfo() calls in
+subprocesses where they're permitted to block as long as necessary.
 
 By default it will run eight subprocesses and prefer address families
-in whatever order Socket::GetAddrInfo returns them.  These defaults
-can be overridden with constructor parameters.
+in whatever order getaddrinfo() returns them.  These defaults can be
+overridden with constructor parameters.  getaddrinfo() delegates to
+the operating system's resolver, which may be reconfigured according
+to the usual conventions.
 
 =head2 PUBLIC METHODS
 
@@ -642,16 +645,14 @@ additional optional ones.
 
 "host" and "service" are required and contain the host (name or
 Internet address) and service (name or numeric port) that will be
-passed verbatim to getaddrinfo().  See L<Socket::GetAddrInfo> for
-details.
+passed verbatim to getaddrinfo().  See L<Socket> for details.
 
 "event" is optional; it contains the name of the event that will
 contain the resolver response.  If omitted, it will default to
 "resolver_response"; you may want to specify a shorter event name.
 
 "hints" is optional.  If specified, it must contain a hashref of hints
-exactly as getaddrinfo() expects them.  See L<Socket::GetAddrInfo> for
-details.
+exactly as getaddrinfo() expects them.  See L<Socket> for details.
 
 "misc" is optional continuation data that will be passed back in the
 response.  It may contain any type of data the application requires.
@@ -700,8 +701,8 @@ In list context, it returns the numeric port and address.
 	}
 
 unpack_addr() is a convenience wrapper around getnameinfo() from
-Socket::GetAddrInfo.  You're certainly welcome to use the discrete
-function instead.
+L<Socket>.  You're certainly welcome to use the discrete function
+instead.
 
 unpack_addr() returns bleak emptiness on failure, regardless of
 context.  You can check for undef return.
@@ -712,10 +713,9 @@ context.  You can check for undef return.
 
 The resolver response event includes three parameters.
 
-$_[ARG0] and $_[ARG1] contain the retrn values from
-Socket::GetAddrInfo's getaddrinfo() call.  These are an error message
-(if the call failed), and an arrayref of address structures if the
-call succeeded.
+$_[ARG0] and $_[ARG1] contain the retrn values from Socket's
+getaddrinfo() call.  These are an error message (if the call failed),
+and an arrayref of address structures if the call succeeded.
 
 The component provides its own error message, 'component shut down'.
 This response is given for every pending request at the time the user

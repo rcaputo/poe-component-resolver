@@ -5,7 +5,7 @@ use strict;
 
 use Storable qw(nfreeze thaw);
 
-use Socket::GetAddrInfo qw(getaddrinfo);
+use Socket qw(getaddrinfo);
 
 sub main {
 	my $buffer = "";
