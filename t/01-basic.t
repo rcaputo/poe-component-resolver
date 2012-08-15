@@ -103,7 +103,7 @@ POE::Session->create(
 			my @got_families = map { $_->{family} } @$addresses;
 
 			my $i = $#got_families;
-			while ($i--) {
+			while ($i > 0 and $i--) {
 				splice(@got_families, $i, 1) if (
 					$got_families[$i] == $got_families[$i+1]
 				);
