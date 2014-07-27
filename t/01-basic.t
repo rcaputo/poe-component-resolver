@@ -9,6 +9,8 @@ sub POE::Kernel::ASSERT_DEFAULT () { 1 }
 use POE;
 use POE::Component::Resolver qw(AF_INET AF_INET6);
 
+use Socket;
+
 my $r4 = POE::Component::Resolver->new(
 	max_resolvers => 1,
 	idle_timeout  => 1,
@@ -52,7 +54,7 @@ if ($has_ipv6) {
 # to bite me later, unless someone wants to take a shot at it.
 
 my $host = 'ipv6-test.com';
-my $tcp  = getprotobyname("tcp");
+my $tcp  = Socket::IPPROTO_TCP;
 my $service = $^O eq 'solaris' ? 80 : 'http';
 
 POE::Session->create(
